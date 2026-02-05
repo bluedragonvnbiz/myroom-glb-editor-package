@@ -1,0 +1,26 @@
+{
+  "name": "@myroom/glb-editor",
+  "version": "1.0.0",
+  "description": "A reusable GLB/GLTF 3D model viewer React component powered by Babylon.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    },
+    "./dist/GlbEditor.css": "./dist/GlbEditor.css",
+    "./styles.css": "./dist/GlbEditor.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "@babylonjs/core": ">=7.0.0",
+    "@babylonjs/loaders": ">=7.0.0"
+  }
+}
