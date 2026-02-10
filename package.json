@@ -17,10 +17,33 @@
   "files": [
     "dist"
   ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean && npm run copy-css",
+    "copy-css": "node -e \"require('fs').copyFileSync('src/GlbEditor.css', 'dist/GlbEditor.css')\"",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "glb",
+    "gltf",
+    "3d",
+    "viewer",
+    "babylon",
+    "babylonjs",
+    "react",
+    "component"
+  ],
+  "author": "",
+  "license": "MIT",
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0",
     "@babylonjs/core": ">=7.0.0",
     "@babylonjs/loaders": ">=7.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "tsup": "^8.0.1"
   }
 }

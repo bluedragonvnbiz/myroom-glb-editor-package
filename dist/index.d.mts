@@ -2,7 +2,8 @@ import React from 'react';
 
 interface GlbEditorProps {
     glbBlob: Blob;
-    onMeshSelected?: (meshName: string) => void;
+    imageURL?: string;
+    onMeshSelected?: (meshName: string, faceId: number) => void;
     className?: string;
     style?: React.CSSProperties;
 }

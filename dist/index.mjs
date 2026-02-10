@@ -1,27 +1,16 @@
 // src/GlbEditor.tsx
 import { useEffect, useRef } from "react";
-import {
-  Engine,
-  Scene,
-  ArcRotateCamera,
-  HemisphericLight,
-  Vector3,
-  SceneLoader,
-  Color4
-} from "@babylonjs/core";
+import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, SceneLoader, Color4, Texture, StandardMaterial, Mesh, VertexBuffer, VertexData } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 import { jsx } from "react/jsx-runtime";
-var GlbEditor = ({
-  glbBlob,
-  onMeshSelected,
-  className = "glb-canvas",
-  style
-}) => {
+var GlbEditor = ({ glbBlob, imageURL, onMeshSelected, className = "glb-canvas", style }) => {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const sceneRef = useRef(null);
+  const selectedMeshRef = useRef(null);
   useEffect(() => {
     if (!canvasRef.current) return;
+    imageURL;
     const engine = new Engine(canvasRef.current, true, {
       preserveDrawingBuffer: true,
       stencil: true
@@ -30,14 +19,7 @@ var GlbEditor = ({
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.1, 0.1, 0.1, 1);
     sceneRef.current = scene;
-    const camera = new ArcRotateCamera(
-      "camera",
-      -Math.PI / 2,
-      Math.PI / 2.5,
-      5,
-      Vector3.Zero(),
-      scene
-    );
+    const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 5, Vector3.Zero(), scene);
     camera.attachControl(canvasRef.current, true);
     camera.wheelPrecision = 50;
     camera.minZ = 0.01;
@@ -69,8 +51,12 @@ var GlbEditor = ({
         const mesh = pickResult.pickedMesh;
         if (mesh.name && mesh.name !== "__root__") {
           console.log("Mesh clicked:", mesh.name);
+          selectedMeshRef.current?.setEnabled(true);
+          selectedMeshRef.current = mesh;
+          applyTextureToMesh(pickResult.faceId, mesh, imageURL ?? "/sample-texture.png", scene);
+          selectedMeshRef.current?.setEnabled(false);
           if (onMeshSelected) {
-            onMeshSelected(mesh.name);
+            onMeshSelected(mesh.name, pickResult.faceId);
           }
         }
       }
@@ -88,7 +74,14 @@ var GlbEditor = ({
       engine.dispose();
     };
   }, [glbBlob, onMeshSelected]);
-  return /* @__PURE__ */ jsx("canvas", { ref: canvasRef, className, style });
+  return /* @__PURE__ */ jsx(
+    "canvas",
+    {
+      ref: canvasRef,
+      className,
+      style
+    }
+  );
 };
 function fitModelInFrustum(meshes, camera, _scene) {
   if (meshes.length === 0) return;
@@ -123,8 +116,110 @@ function setupMeshSelection(meshes, _scene, _onMeshSelected) {
   });
   console.log("Mesh selection enabled for", meshes.length, "meshes");
 }
+function createMeshFromPoints(name, points, normal, scene) {
+  if (points.length === 0) {
+    return;
+  }
+  normal.normalize();
+  let helper = Math.abs(normal.y) > 0.9 ? Vector3.Right() : Vector3.Up();
+  let u = Vector3.Cross(normal, helper).normalize();
+  let v = Vector3.Cross(normal, u).normalize();
+  let minU = Infinity, maxU = -Infinity;
+  let minV = Infinity, maxV = -Infinity;
+  points.forEach((p) => {
+    let dotU = Vector3.Dot(p, u);
+    let dotV = Vector3.Dot(p, v);
+    minU = Math.min(minU, dotU);
+    maxU = Math.max(maxU, dotU);
+    minV = Math.min(minV, dotV);
+    maxV = Math.max(maxV, dotV);
+  });
+  let avgDist = 0;
+  points.forEach((p) => avgDist += Vector3.Dot(p, normal));
+  avgDist /= points.length;
+  let planeOffset = normal.scale(avgDist);
+  const corners = [
+    u.scale(minU).add(v.scale(minV)).add(planeOffset),
+    // Bottom-Left
+    u.scale(maxU).add(v.scale(minV)).add(planeOffset),
+    // Bottom-Right
+    u.scale(maxU).add(v.scale(maxV)).add(planeOffset),
+    // Top-Right
+    u.scale(minU).add(v.scale(maxV)).add(planeOffset)
+    // Top-Left
+  ];
+  const positions = [
+    corners[0].x,
+    corners[0].y,
+    corners[0].z,
+    corners[1].x,
+    corners[1].y,
+    corners[1].z,
+    corners[2].x,
+    corners[2].y,
+    corners[2].z,
+    corners[3].x,
+    corners[3].y,
+    corners[3].z
+  ];
+  const indices = [0, 1, 2, 0, 2, 3];
+  const uvs = [1, 1, 0, 1, 0, 0, 1, 0];
+  const vertexData = new VertexData();
+  vertexData.positions = positions;
+  vertexData.indices = indices;
+  vertexData.uvs = uvs;
+  const normals = [];
+  VertexData.ComputeNormals(positions, indices, normals);
+  vertexData.normals = normals;
+  const customMesh = new Mesh(name, scene);
+  vertexData.applyToMesh(customMesh);
+  return customMesh;
+}
+function applyTextureToMesh(faceId, placeHolderMesh, imageURL, scene) {
+  const vertices = [];
+  const positions = placeHolderMesh.getVerticesData(VertexBuffer.PositionKind) ?? [];
+  if (positions) {
+    for (let i = 0; i < positions.length; i += 3) {
+      vertices.push(Vector3.FromArray(positions, i));
+    }
+  }
+  const indices = placeHolderMesh.getIndices() ?? [];
+  const v0 = vertices[indices[faceId * 3]];
+  const v1 = vertices[indices[faceId * 3 + 1]];
+  const v2 = vertices[indices[faceId * 3 + 2]];
+  const normal = Vector3.Cross(v1.subtract(v0), v2.subtract(v0));
+  normal.normalize();
+  const pointsOnPlane = [];
+  for (let i = 0; i < vertices.length; i++) {
+    if (Math.abs(vertices[i].subtract(v0).dot(normal)) < 1e-4) {
+      pointsOnPlane.push(vertices[i]);
+    }
+  }
+  const existingPlane = scene.getMeshByName(`${placeHolderMesh.name}_thumbnail`);
+  if (existingPlane) {
+    existingPlane.dispose();
+  }
+  const targetPlane = createMeshFromPoints(`${placeHolderMesh.name}_thumbnail`, pointsOnPlane, normal, scene);
+  if (targetPlane) {
+    targetPlane.parent = placeHolderMesh.parent;
+    targetPlane.scaling = placeHolderMesh.scaling.clone();
+    if (placeHolderMesh.rotationQuaternion) {
+      targetPlane.rotationQuaternion = placeHolderMesh.rotationQuaternion.clone();
+    } else {
+      targetPlane.rotation = placeHolderMesh.rotation.clone();
+    }
+    const targetPlaneMaterial = new StandardMaterial(`${placeHolderMesh.name}_thumbnail_material`, scene);
+    targetPlaneMaterial.backFaceCulling = false;
+    if (imageURL) {
+      targetPlaneMaterial.diffuseTexture = new Texture(imageURL, scene);
+    }
+    targetPlane.material = targetPlaneMaterial;
+    targetPlane.position = placeHolderMesh.position;
+    targetPlane.computeWorldMatrix(true);
+    targetPlane.isPickable = false;
+  }
+}
 var GlbEditor_default = GlbEditor;
 export {
   GlbEditor_default as GlbEditor
 };
-//# sourceMappingURL=index.mjs.map
